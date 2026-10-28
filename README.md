@@ -27,12 +27,21 @@ Resulting import includes the original folder structure, a search bar, filters, 
 - Sanity check
     - Run `python3 -m quiport verify --export-id myaccount --token "MYQUIPTOKEN"` to do a verification check.
 
-## Result
+## Imported folder tree
 
+<img width="877" height="608" alt="folder-tree" src="https://github.com/user-attachments/assets/2d9f5e41-ee64-40b1-bbc2-1f41e9b0f7a5" />
 
+## Imported document
+
+<img width="882" height="873" alt="quiport-document" src="https://github.com/user-attachments/assets/9d4275e2-f6ff-4029-9aaa-2bb0d6b76415" />
+
+## Another imported documend
+
+<img width="791" height="733" alt="another-example" src="https://github.com/user-attachments/assets/dd0f1244-aa4b-49e1-a46f-30a966d37467" />
 
 
 ## What it supports
+
 - Imports all documents, chats, spreadsheets, and slide decks as HTML
 - Copies over Quip styling (mostly)
 - Shows inline comment bubbles, with the chat messages at the bottom. Sidebar chat messages are also at the bottom.
@@ -43,7 +52,6 @@ Resulting import includes the original folder structure, a search bar, filters, 
 - Updates document mentions to point to the exported documents, not the quip.com links
 - Code blocks show up as code blocks, with inline formatting
 - Downloads every spreadsheet and slide deck in XLS and PPT format, as well as the raw HTML
-- It also caches the results of every API call on disk under `export-myaccount/raw` so that the raw data is all there later if needed.
 
 
 ## Fetching updates
@@ -83,8 +91,9 @@ It will give you links to open the import and the original side by side. Most of
 
 ## Caveats
 
-Everything except this readme was written with Claude Code to import my own account and almost all of the code is completely unreviewed by humans.
+Everything except this readme was written with Claude Code to import my own account and almost all of the code is completely unreviewed by humans. I ran through a bunch of tests and iterations with it on edge cases and stability and to make it look okay, but I do not endorse it beyond that it worked great for importing 1500+ documents and 100+ folders on my personal account.
 
+Some safety things built in:
 - It will only read out of your Quip account, it never writes anything.
-- Everything runs on your computer.
-- It worked great for importing 1500+ documents on my personal account across 100+ folders so it does appear to work!
+- Everything runs on your computer and is stored on your computer.
+- It caches the results of every API call on disk under `export-myaccount/raw` so that the raw data is all there later if needed.
