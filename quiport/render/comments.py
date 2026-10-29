@@ -276,7 +276,7 @@ def render_chat(comments: CommentSet, blob_resolver, page_path: str,
 
 
 def _message_html(m: Message, page_path: str, blob_resolver, name_resolver=None) -> str:
-    """`Sophia (Mar 9, 2021): Hi!` plus any attached images.
+    """`Alex (Mar 9, 2021): Hi!` plus any attached images.
 
     Quip stores an @mention of a person as a bare `https://quip.com/<user_id>`
     URL in the message text and renders it as the person's name. Left alone it

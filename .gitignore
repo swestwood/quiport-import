@@ -2,3 +2,6 @@
 ./assets/.DS_Store
 ./render/.DS_Store
 __pycache__/
+# Exports hold a Quip account's documents and API responses -- never commit them
+export-*/
+export-*.zip

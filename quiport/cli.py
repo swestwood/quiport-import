@@ -1,6 +1,6 @@
 """Command line entry point.
 
-    python3 -m quiport all --export-id swquip --token "$QUIP_TOKEN"
+    python3 -m quiport all --export-id myaccount --token "$QUIP_TOKEN"
 
 Phases are separate commands so any of them can be re-run independently.
 Everything after `harvest` works offline from the raw cache.
@@ -118,7 +118,7 @@ def cmd_reports(args):
     result = R.render_all(cfg, store, ledger, write_pages=False,
                           progress=_page_progress())
     reports.write_all(cfg, result, _discovery_summary(cfg))
-    if not args.no_zip:
+    if args.zip or args.include_raw:
         reports.make_zip(cfg, include_raw=args.include_raw)
     print(json.dumps(result["stats"], indent=1))
     return 0
@@ -145,7 +145,7 @@ def cmd_all(args):
     result = R.render_all(cfg, store, ledger, progress=_page_progress())
     linkpass.run(cfg, user_ids=_known_user_ids(store))
     reports.write_all(cfg, result, _discovery_summary(cfg))
-    if not args.no_zip:
+    if args.zip or args.include_raw:
         reports.make_zip(cfg, include_raw=args.include_raw)
 
     print(json.dumps({"stats": result["stats"], "client": client.stats,
@@ -486,9 +486,10 @@ def main(argv=None):
             p.add_argument("--no-zip", action="store_true",
                            help="skip refreshing export-<id>.zip after rebuilding")
         if name in ("all", "reports"):
-            p.add_argument("--no-zip", action="store_true", help="skip the zip archive")
+            p.add_argument("--zip", action="store_true",
+                           help="also write export-<id>.zip beside the export")
             p.add_argument("--include-raw", action="store_true",
-                           help="include the raw API cache in the zip")
+                           help="include the raw API cache in the zip (implies --zip)")
         if name in ("harvest", "all"):
             p.add_argument("--backfill", action="store_true",
                            help="revisit threads already harvested, to pick up "

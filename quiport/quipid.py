@@ -7,10 +7,10 @@ in the test account -- 325 users, 136 threads, 35 folders, 2 companies -- with
 
     index:  0 1 2 3 4 5 6 7 8 9 10
                     ^
-    IVZ A E A fDxdt   E -> user
-    AVN 9 A A eqq5w   A -> thread
-    XTR A O A jWF4G   O -> folder
-    NQH A c A V4DT7   c -> company
+    Meu A E A self0   E -> user
+    Doc 9 A A xmpl2   A -> thread
+    Fld A O A xmpl1   O -> folder
+    Coy A c A xmpl1   c -> company
 
 This is not documented, so it is treated as a strong hint rather than a
 guarantee: it is used where a wrong answer is harmless (deciding that a link is

@@ -42,7 +42,7 @@ def slugify(text: str, max_len: int = MAX_SLUG) -> str:
 
 
 def thread_filename(secret_path: str, title: str, ext: str = ".html") -> str:
-    """`9LfNAcTbtz5n-Team-Selling-Email-Drip.html`"""
+    """`Sp1xmplPath0-Weekly-Sales-Email-Plan.html`"""
     slug = slugify(title) or "untitled"
     prefix = re.sub(r"[^\w-]", "", secret_path or "")
     return f"{prefix}-{slug}{ext}" if prefix else f"{slug}{ext}"

@@ -39,7 +39,7 @@ ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
 
 
 def endpoint_slug(method: str, endpoint: str) -> str:
-    """`/2/threads/AVN9AAeqq5w/html` -> `GET/2_threads_ID_html`."""
+    """`/2/threads/Doc9AAxmpl2/html` -> `GET/2_threads_ID_html`."""
     parts = []
     for seg in endpoint.strip("/").split("/"):
         if not seg:

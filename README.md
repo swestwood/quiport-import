@@ -12,20 +12,16 @@ Resulting import includes the original folder structure, a search bar, filters, 
     - `cd quiport-import/`
 - Get your Quip API token
     - Visit [https://quip.com/dev/token](https://quip.com/dev/token) in your browser while logged in. Copy the long bit of text it gives you.
-- Run this command: 
-    - `python3 -m quiport factcheck --export-id myaccount --token "MYQUIPTOKEN"`
-    - "myaccount" can be replaced by whatever you want to call the export
-    - Replace "MYQUIPTOKEN" with your token. Make sure it in quote marks.
-- Wait for it to finish. It'll do a bunch of verbose API checks that say PASS or warn. You can just ignore the results, don't bother reading them.
 - Run this command:
     - `python3 -m quiport all --export-id myaccount --token "MYQUIPTOKEN"`
-    - Replace "myaccount" and "MYQUIPTOKEN" like before
+    - "myaccount" can be replaced by whatever you want to call the export
+    - Replace "MYQUIPTOKEN" with your token. Make sure it is in quote marks.
     - Then wait! It will give you updates along the way. It may take awhile depending on how big your account is. You can probably ignore everything it says.
     - It can be stopped at any point, just do Ctrl-C. To resume where you left off, just run the command again.
 - When it finishes:
     - Open `quiport-import/export-myaccount/index.html` in a browser to see all your imported files. 
 - Sanity check
-    - Run `python3 -m quiport verify --export-id myaccount --token "MYQUIPTOKEN"` to do a verification check.
+    - Run `python3 -m quiport verify --export-id myaccount` to do a verification check.
 
 ## Imported folder tree
 
@@ -35,7 +31,7 @@ Resulting import includes the original folder structure, a search bar, filters, 
 
 <img width="882" height="873" alt="quiport-document" src="https://github.com/user-attachments/assets/9d4275e2-f6ff-4029-9aaa-2bb0d6b76415" />
 
-## Another imported documend
+## Another imported document
 
 <img width="791" height="733" alt="another-example" src="https://github.com/user-attachments/assets/dd0f1244-aa4b-49e1-a46f-30a966d37467" />
 
@@ -51,32 +47,32 @@ Resulting import includes the original folder structure, a search bar, filters, 
 - A search bar to search across your imported file titles
 - Updates document mentions to point to the exported documents, not the quip.com links
 - Code blocks show up as code blocks, with inline formatting
-- Downloads every spreadsheet and slide deck in XLS and PPT format, as well as the raw HTML
+- Downloads every spreadsheet in XLS as well as the raw HTML
 
 
 ## Fetching updates
 
 If you keep using your Quip account after import, you can pick up the changes by running:
 
-`python3 -m quiport check-updates --export-id myaccount --token "MYQUIPTOKEN`
+`python3 -m quiport check-updates --export-id myaccount --token "MYQUIPTOKEN"`
 
 Sample output:
 ```
 Checked 136 threads.
 
 Modified since this export (5):
-  Team Sync  (MRYAAASRpNK)
+  Team Sync  (XInAAASRpNK)
       Jun 7, 2019 at 8:29 pm -> Aug 16, 2026 at 11:22 pm
   ...
 
 Not yet in this export (1):
-  https://acme.quip.com/WenyAqjbX6S3  (BDXAAAWaS40)  [text_document]
+  https://acme.quip.com/RpayAqjbX6S3  (IaiAAAWaS40)  [text_document]
 
 Refresh these 6 document(s)? [y/N]
 ```
 
 Or, you can refetch a specific document with:
-- `python3 -m quiport refresh --export-id myaccount "https://acme.quip.com/S8VnAlAOXYaD/Some-document" --token "MYQUIPTOKEN"`
+- `python3 -m quiport refresh --export-id myaccount "https://acme.quip.com/A3anAlAOXYaD/Some-document" --token "MYQUIPTOKEN"`
 
 ## Post-import checks
 
