@@ -9,21 +9,21 @@ Resulting import includes the original folder structure, a search bar, filters, 
 ## How to use
 
 - Download this repo, then open it on the command line: 
-    - `cd quiport-wrapper/`
+    - `cd quiport-import/`
 - Get your Quip API token
     - Visit [https://quip.com/dev/token](https://quip.com/dev/token) in your browser while logged in. Copy the long bit of text it gives you.
 - Run this command: 
-    - `python3 -m quiport check-updates --export-id myaccount --token "MYQUIPTOKEN"`
+    - `python3 -m quiport factcheck --export-id myaccount --token "MYQUIPTOKEN"`
     - "myaccount" can be replaced by whatever you want to call the export
     - Replace "MYQUIPTOKEN" with your token. Make sure it in quote marks.
-- Wait for it to finish a bunch of verbose API checks. Then it should say that everything is ready.
+- Wait for it to finish. It'll do a bunch of verbose API checks that say PASS or warn. You can just ignore the results, don't bother reading them.
 - Run this command:
     - `python3 -m quiport all --export-id myaccount --token "MYQUIPTOKEN"`
     - Replace "myaccount" and "MYQUIPTOKEN" like before
-    - Then wait! It will give you updates along the way. It may take awhile depending on how big your account is.
+    - Then wait! It will give you updates along the way. It may take awhile depending on how big your account is. You can probably ignore everything it says.
     - It can be stopped at any point, just do Ctrl-C. To resume where you left off, just run the command again.
 - When it finishes:
-    - Open `quiport-wrapper/export-myaccount/index.html` in a browser to see all your imported files. 
+    - Open `quiport-import/export-myaccount/index.html` in a browser to see all your imported files. 
 - Sanity check
     - Run `python3 -m quiport verify --export-id myaccount --token "MYQUIPTOKEN"` to do a verification check.
 
