@@ -150,8 +150,40 @@ def cmd_all(args):
 
     print(json.dumps({"stats": result["stats"], "client": client.stats,
                       "store": store.stats()}, indent=1))
-    print(f"\nOpen {cfg.root / 'index.html'}")
+    print(_finished_message(cfg))
+    _open_in_browser(cfg.root.resolve() / "index.html")
     return 0
+
+
+def _finished_message(cfg) -> str:
+    """The last thing `all` prints, so it is what the user sees.
+
+    A file:// URL rather than a relative path: most terminals make it
+    clickable, and it pastes straight into a browser's address bar. Every path
+    and command is built from this run's export id.
+    """
+    import shlex
+
+    root = cfg.root.resolve()
+    export_id = shlex.quote(cfg.export_id)
+    return (f"\nSuccess! Your Quip export lives in the {root.name} folder:\n"
+            f"  {root}\n\n"
+            f"Open this in a browser to check it out:\n"
+            f"  {(root / 'index.html').as_uri()}\n\n"
+            f"To double-check it, run these two commands:\n"
+            f"  python3 -m quiport audit --export-id {export_id}\n"
+            f"  python3 -m quiport verify --export-id {export_id}")
+
+
+def _open_in_browser(page) -> None:
+    """Best effort: the export is already written and the link is printed, so a
+    machine with no browser (a server, a CI box) just skips this."""
+    import webbrowser
+
+    try:
+        webbrowser.open(page.as_uri())
+    except Exception as e:                  # webbrowser.Error, or a broken $BROWSER
+        log.debug("could not open a browser: %s", e)
 
 
 def cmd_status(args):
@@ -234,7 +266,7 @@ def _rebuild(cfg, store, ledger, zip_archive=True):
 
     Rebuilds the whole export, not just the refreshed documents: a changed
     document moves in `recent.html`, may gain or lose a row in
-    `needs-attention.html` or `spreadsheets.html`, and changes its own
+    `import-notes.html` or `spreadsheets.html`, and changes its own
     "Exported from Quip on ..." footer. Re-rendering everything is how those
     stay consistent, and offline it is cheap.
 
@@ -374,17 +406,22 @@ def cmd_audit(args):
         print(f"  audited {i}/{n} threads", flush=True)
 
     result = A.run(cfg, store, progress=progress)
-    text = A.report(result)
+    text = A.report(result, cfg.export_id)
     (cfg.extras_dir / "audit.md").write_text(text, encoding="utf-8")
-    print("\n" + text)
+    # The report ends with the next steps; nothing printed after it should bury them.
+    print(f"\nFull report saved to {cfg.extras_dir / 'audit.md'}\n\n{text}")
 
     if args.repair:
+        import shlex
+        base = f"python3 -m quiport {{}} --export-id {shlex.quote(cfg.export_id)}"
         calls = [c for r in result["results"] for c in r.calls_needed]
         if not calls:
-            print("Nothing to repair.")
+            print("Nothing for --repair to fetch: no document is missing anything. "
+                  "Follow the other steps above, if any.")
             return 0
         if not cfg.token:
-            sys.exit(f"{len(calls)} calls needed; pass --token to repair")
+            sys.exit(f"{len(calls)} call(s) to make, which needs your token:\n\n"
+                     f"    {base.format('audit')} --repair --token {A.TOKEN_PLACEHOLDER}")
         print(f"\nRepairing: re-queueing {len(calls)} call(s) via harvest.\n")
         # The ledger is what harvest consults, so clearing the affected threads
         # is what makes it fetch them again -- rather than replaying raw calls
@@ -393,15 +430,12 @@ def cmd_audit(args):
         ledger.reopen("harvest", incomplete)
         client = QuipClient(cfg.token, cfg.base_url, store=store)
         Hv.harvest(client, cfg, ledger)
-        print("Re-run `audit` to confirm.")
+        print("\nRepair finished. Rebuild the pages, then audit again to confirm:\n\n"
+              f"    {base.format('all')} --token {A.TOKEN_PLACEHOLDER}\n"
+              f"    {base.format('audit')}")
         return 0
 
-    ok = (result["incomplete"] == 0 and not result["folder_gaps"]
-          and not result.get("discovery_gaps")
-          and not result["non_answers"]
-          and not result["index"]["missing_from_index_count"])
-    print(f"Written to {cfg.extras_dir / 'audit.md'}")
-    return 0 if ok else 1
+    return 0 if A.is_complete(result) else 1
 
 
 def cmd_reindex(args):
@@ -418,7 +452,10 @@ def cmd_verify(args):
     (cfg.extras_dir / "verification.md").write_text(text, encoding="utf-8")
     print("\n" + text)
     print(f"Written to {cfg.extras_dir / 'verification.md'}")
-    return 0 if all(c.ok for c in checks) else 1
+    if not all(c.ok for c in checks):
+        return 1
+    print("\nAll done, congrats! Enjoy your Quip export.")
+    return 0
 
 
 def cmd_factcheck(args):

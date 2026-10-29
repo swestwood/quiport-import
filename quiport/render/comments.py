@@ -275,6 +275,22 @@ def render_chat(comments: CommentSet, blob_resolver, page_path: str,
     return "\n".join(lines)
 
 
+def recording_resolver(blob_resolver, report):
+    """`blob_resolver`, but every file it cannot supply is recorded on `report`.
+
+    Comment and chat attachments go through the same lookup as images in the
+    body, which records its own misses in `transform`. These did not, so a
+    comment's lost file showed inline and nowhere else. Kept separate from the
+    body's resolver so a miss is counted once, under the right label.
+    """
+    def resolve(blob_thread_id, blob_id, element, page_path, name_hint=""):
+        rel = blob_resolver(blob_thread_id, blob_id, element, page_path, name_hint=name_hint)
+        if not rel:
+            report.add("missing_comment_file", blob_id=blob_id, label=name_hint)
+        return rel
+    return resolve
+
+
 def _message_html(m: Message, page_path: str, blob_resolver, name_resolver=None) -> str:
     """`Alex (Mar 9, 2021): Hi!` plus any attached images.
 
@@ -336,7 +352,8 @@ def _message_html(m: Message, page_path: str, blob_resolver, name_resolver=None)
             continue
         rel = blob_resolver(None, blob_id, None, page_path, name_hint=name)
         if not rel:
-            body += f' <span class="quip-missing-image">[missing: {H.escape_text(name or blob_id)}]</span>'
+            body += (f' <span class="quip-missing-image">[missing file: '
+                     f'{H.escape_text(name or blob_id)}]</span>')
         elif re.search(r"\.(png|jpe?g|gif|webp|bmp|svg)$", rel, re.I):
             body += f'<img class="quip-comment-image" src="{H.escape_attr(rel)}" ' \
                     f'alt="{H.escape_attr(name)}">'

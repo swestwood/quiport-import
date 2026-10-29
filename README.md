@@ -19,9 +19,11 @@ Resulting import includes the original folder structure, a search bar, filters, 
     - Then wait! It will give you updates along the way. It may take awhile depending on how big your account is. You can probably ignore everything it says.
     - It can be stopped at any point, just do Ctrl-C. To resume where you left off, just run the command again.
 - When it finishes:
-    - Open `quiport-import/export-myaccount/index.html` in a browser to see all your imported files. 
-- Sanity check
-    - Run `python3 -m quiport verify --export-id myaccount` to do a verification check.
+    - Open `quiport-import/export-myaccount/index.html` in a browser to see, browse, and search all your imported files. 
+    - The imported documents live in `export-myaccount/Imported from Quip`
+- Optional sanity checks
+    - Run `python3 -m quiport audit --export-id myaccount` to double-check all documents were fetched if you stopped and resumed the "all" command.
+    - Run `python3 -m quiport verify --export-id myaccount` to do a double-check on the generated HTML.
 
 ## Imported folder tree
 
@@ -40,7 +42,7 @@ Resulting import includes the original folder structure, a search bar, filters, 
 
 - Imports all documents, chats, spreadsheets, and slide decks as HTML
 - Copies over Quip styling (mostly)
-- Shows inline comment bubbles, with the chat messages at the bottom. Sidebar chat messages are also at the bottom.
+- Shows inline comment bubbles, with the chat messages at the bottom. Sidebar chat messages are also at the bottom. Downloads chat attachments.
 - Reproduces folder structure and folder colors
 - Fetches images and sharing info
 - Shows task lists like they appear in Quip
@@ -50,9 +52,22 @@ Resulting import includes the original folder structure, a search bar, filters, 
 - Downloads every spreadsheet in XLS as well as the raw HTML
 
 
-## Fetching updates
+## Post-import checks
 
-If you keep using your Quip account after import, you can pick up the changes by running:
+After the import, open `export-myaccount/import-notes.html` (or click "Import notes" at the top) in your browser to see:
+- Documents with missing images
+- Documents where no content was returned
+- Documents you might want to spot check (like live apps)
+- A list of spreadsheets (formulas can't be imported, only raw values)
+- etc.
+
+It will give you links to open the import and the original side by side. Most of them are probably actually fine, but just to be paranoid.
+
+
+
+## Fetching new changes
+
+If you keep using your Quip account after exporting it, you can pick up the changes by running:
 
 `python3 -m quiport check-updates --export-id myaccount --token "MYQUIPTOKEN"`
 
@@ -73,17 +88,6 @@ Refresh these 6 document(s)? [y/N]
 
 Or, you can refetch a specific document with:
 - `python3 -m quiport refresh --export-id myaccount "https://acme.quip.com/A3anAlAOXYaD/Some-document" --token "MYQUIPTOKEN"`
-
-## Post-import checks
-
-After the import, open `export-myaccount/needs-attention.html` in your browser to see everything the import could not carry over faithfully, such as:
-- Documents with missing images
-- Documents with inline files
-- Documents where no content was returned
-- A list of spreadsheets (formulas can't be imported, only raw values)
-- etc.
-
-It will give you links to open the import and the original side by side. Most of them are probably actually fine, but just to be paranoid.
 
 ## Caveats
 

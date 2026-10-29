@@ -19,6 +19,7 @@ from ..naming import path_to_root
 STYLESHEET_NAME = "quip-export.css"
 UTILS_NAME = "quip-utils.js"
 SEARCH_INDEX_NAME = "quip-search-index.js"
+IMPORT_NOTES = "import-notes.html"   # what the archive could not carry across
 
 # Every page's top bar. Ordered as they are used, not alphabetically.
 NAV_LINKS = (
@@ -26,8 +27,7 @@ NAV_LINKS = (
     ("recent.html", "Recent"),
     ("spreadsheets.html", "Spreadsheets"),
     ("slide-decks.html", "Slide decks"),
-    ("needs-attention.html", "Needs attention"),
-    ("limitations.html", "Limitations"),
+    (IMPORT_NOTES, "Import notes"),
 )
 HIGHLIGHT_NAME = "highlight.min.js"   # vendored highlight.js, BSD-3-Clause
 ICONS_DIR = "icons"
@@ -448,6 +448,11 @@ li.quip-has-comment > .quip-comment-gutter { left: -3.6rem; }
 .quip-folder-light_purple { color: rgb(198, 169, 246); }
 .quip-entry-title { min-width: 0; overflow-wrap: anywhere; color: var(--accent); }
 .quip-folder .quip-entry-title { font-weight: 600; }
+/* The letters a search matched. A tint of the link colour rather than bold,
+   which folder titles already are; mixed from --accent so it follows the
+   dark theme. */
+.quip-hit { background: color-mix(in srgb, var(--accent) 20%, transparent);
+            color: inherit; border-radius: 2px; }
 .quip-row { display: flex; align-items: center; gap: .1rem; }
 
 /* Recents: day headings with their documents beneath, after Quip's own page.

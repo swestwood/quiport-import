@@ -240,7 +240,7 @@ class FactCheck:
         self.add(
             "v2.spreadsheet_summary", PASS,
             f"{len(summaries)} threads; has_charts={len(charts)} has_formulas={len(formulas)} "
-            "(drives the needs-attention report)",
+            "(drives the import notes report)",
             with_charts=charts, with_formulas=formulas,
         )
 

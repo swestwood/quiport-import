@@ -3588,5 +3588,223 @@ class TestSecurityPosture(unittest.TestCase):
             tmp.cleanup()
 
 
+class TestMissingCommentFiles(unittest.TestCase):
+    """A comment's attachment that could not be fetched is reported, not just shown."""
+
+    def _message(self):
+        return Message.from_raw({"id": "m1", "text": "see attached", "created_usec": 1,
+                                 "author_name": "Alex", "visible": True,
+                                 "files": [{"hash": "B1", "name": "plan.pdf"},
+                                           {"hash": "B2", "name": "photo.png"}]})
+
+    def test_a_miss_is_marked_inline_and_recorded(self):
+        report = RenderReport("T1", "Doc")
+        found = {"B2": "Doc_files/photo.png"}
+        resolver = C.recording_resolver(
+            lambda _t, blob_id, _e, _p, name_hint="": found.get(blob_id), report)
+        html = C._message_html(self._message(), "Doc.html", resolver)
+        self.assertIn("[missing file: plan.pdf]", html)
+        self.assertIn('src="Doc_files/photo.png"', html)
+        self.assertEqual(report.count("missing_comment_file"), 1)
+        self.assertEqual(report.entries[0]["label"], "plan.pdf")
+
+    def test_it_appears_under_content_loss(self):
+        import inspect
+        from quiport import reports
+        src = inspect.getsource(reports.import_notes)
+        self.assertIn('"missing_comment_file"', src)
+        self.assertIn("in comments", src)
+
+    def test_documents_and_chats_both_record(self):
+        import inspect
+        from quiport.render import chat, document
+        for fn in (chat.render_chat, document.render_document):
+            self.assertIn("recording_resolver", inspect.getsource(fn), fn.__name__)
+
+
+class TestEveryPageHasTheSearchBar(unittest.TestCase):
+    """Documents, folders, chats and shortcuts all carry the same nav and search,
+    plus the icons search results are drawn with."""
+
+    def test_shortcut_pages(self):
+        from quiport.model import Thread
+        from quiport.render.document import render_stub
+        ctx = type("Ctx", (), {"exported_at": staticmethod(lambda _id: None)})()
+        html = render_stub(Thread(id="DocAAAxmpl1", title="Doc"),
+                           "Imported from Quip/A/B/x.html", "Imported from Quip/x.html", ctx)
+        self.assertIn('<nav class="quip-nav">', html)
+        self.assertIn('href="../../../import-notes.html"', html)
+        self.assertIn('src="../../../quip-utils.js"', html)
+        for kind in ("folder", "document", "spreadsheet", "slides", "chat"):
+            self.assertIn(f'id="quip-icon-{kind}"', html)
+
+    def test_chat_and_document_pages(self):
+        import inspect
+        from quiport.render import chat, document
+        for fn in (chat.render_chat, document.render_document):
+            src = inspect.getsource(fn)
+            self.assertIn("site_chrome(page_path)", src, fn.__name__)
+            self.assertIn("ICON_BY_KIND", src, fn.__name__)
+
+
+class TestAuditNextSteps(unittest.TestCase):
+    """A failed audit ends with the exact commands to run, for this export."""
+
+    def _result(self, **over):
+        from quiport.audit import ThreadAudit
+        t = ThreadAudit("DocAAAxmpl1", "Doc")
+        t.gap("html", "cursor chain stopped", refetch=("/2/threads/DocAAAxmpl1/html", {}))
+        r = {"threads": 1, "complete": 0, "incomplete": 1, "refused": 0,
+             "results": [t], "gaps_by_kind": {"html": 1}, "discovery_gaps": [],
+             "folder_gaps": [], "non_answers": [],
+             "index": {"missing_from_index_count": 0}, "failed_attempts": 0}
+        r.update(over)
+        return r
+
+    def _next(self, result, export_id="acme"):
+        from quiport.audit import report
+        text = report(result, export_id)
+        return text[text.index("## What to do next"):]
+
+    def test_steps_come_last_and_use_the_real_export_id(self):
+        from quiport.audit import report
+        text = report(self._result(), "acme-team")
+        self.assertTrue(text.rstrip().endswith("verify --export-id acme-team"))
+        self.assertIn("audit --export-id acme-team --repair --token", text)
+        self.assertNotIn("myaccount", text)
+
+    def test_an_incomplete_thread_needs_repair_rebuild_audit_verify(self):
+        steps = self._next(self._result())
+        order = [steps.index(s) for s in ("audit --export-id acme --repair",
+                                          "all --export-id acme --token",
+                                          "audit --export-id acme\n",
+                                          "verify --export-id acme")]
+        self.assertEqual(order, sorted(order))
+        self.assertNotIn("reindex", steps)
+        self.assertNotIn("--rediscover", steps)
+
+    def test_each_problem_brings_its_own_fix(self):
+        steps = self._next(self._result(
+            incomplete=0, results=[],
+            discovery_gaps=[("forgotten", "DocAAAxmpl2 was harvested but is gone")],
+            folder_gaps=[("folder", "FldAOAxmpl2 never fetched")],
+            index={"missing_from_index_count": 3}))
+        self.assertIn("reindex --export-id acme", steps)
+        self.assertIn("all --export-id acme --rediscover", steps)
+        self.assertIn("refresh --export-id acme DocAAAxmpl2 --token", steps)
+        self.assertNotIn("--repair", steps, "no thread is missing anything")
+        self.assertLess(steps.index("reindex"), steps.index("--rediscover"))
+
+    def test_a_clean_audit_points_to_verify(self):
+        steps = self._next(self._result(incomplete=0, complete=1, results=[]))
+        self.assertIn("Nothing to fix", steps)
+        self.assertIn("verify --export-id acme", steps)
+        self.assertNotIn("--token", steps)
+
+    def test_an_export_id_with_a_space_is_quoted(self):
+        self.assertIn("--export-id 'my account'", self._next(self._result(), "my account"))
+
+
+class TestSearchRanking(unittest.TestCase):
+    """Title search: exact first, then every word, then fuzzy -- one list."""
+
+    SCRIPT = TestBrowserUtils.SCRIPT
+    setUp = TestBrowserUtils.setUp
+    _run = TestBrowserUtils._run
+
+    TITLES = ["Fun Recipe Ideas", "Fun Ideas", "Fun Ideas 2024", "More Fun Ideas",
+              "Ideas for Fun", "Café Q3-Notes", "Infrastructure Design"]
+
+    def _ranked(self, query, titles=None):
+        """[[title, tier, highlighted]] best first, as the search box sorts them."""
+        return json.loads(self._run(f"""
+const U = window.QuipUtils, q = {json.dumps(query)};
+const rows = {json.dumps(titles or self.TITLES)}
+  .map(t => ({{t, m: U.matchTitle(t, q)}})).filter(r => r.m)
+  .sort((a, b) => (a.m.tier - b.m.tier) || (a.m.rank - b.m.rank) ||
+                  (a.t.length - b.t.length));
+console.log(JSON.stringify(rows.map(r => [r.t, r.m.tier,
+  U.highlightTitle(r.t, r.m.positions)])));
+"""))
+
+    def test_words_need_not_be_adjacent(self):
+        titles = [r[0] for r in self._ranked("Fun Ideas")]
+        self.assertIn("Fun Recipe Ideas", titles)
+
+    def test_exact_matches_rank_above_word_matches(self):
+        ranked = self._ranked("Fun Ideas")
+        self.assertEqual(ranked[0][0], "Fun Ideas", "the title itself first")
+        tiers = [r[1] for r in ranked]
+        self.assertEqual(tiers, sorted(tiers))
+        self.assertLess([r[0] for r in ranked].index("More Fun Ideas"),
+                        [r[0] for r in ranked].index("Fun Recipe Ideas"))
+
+    def test_typed_order_beats_reordered_words(self):
+        titles = [r[0] for r in self._ranked("fun ideas")]
+        self.assertLess(titles.index("Fun Recipe Ideas"), titles.index("Ideas for Fun"))
+
+    def test_fuzzy_letters_match_in_order(self):
+        ranked = self._ranked("frcp")
+        self.assertEqual([r[0] for r in ranked], ["Fun Recipe Ideas"])
+        self.assertEqual(ranked[0][1], 2)
+
+    def test_fuzzy_words_must_start_a_word(self):
+        """Without this, a long title loosely matches any short query."""
+        # "f" and "d" both occur in order in "Infrastructure Design", but the
+        # "f" is mid-word.
+        self.assertEqual(self._ranked("fd", ["Infrastructure Design"]), [])
+        self.assertEqual(self._ranked("id", ["Infrastructure Design"])[0][1], 2)
+        self.assertEqual(self._ranked("zzqx"), [])
+
+    def test_accents_and_separators_are_ignored(self):
+        ranked = self._ranked("cafe q3 notes")
+        self.assertEqual(ranked[0][0], "Café Q3-Notes")
+        self.assertEqual(ranked[0][1], 0)
+
+    def test_matched_letters_are_highlighted(self):
+        row = dict((r[0], r[2]) for r in self._ranked("fun ideas"))
+        self.assertEqual(row["Fun Recipe Ideas"],
+                         '<mark class="quip-hit">Fun</mark> Recipe '
+                         '<mark class="quip-hit">Ideas</mark>')
+        # Accent-folded matches highlight the original characters.
+        self.assertIn('<mark class="quip-hit">Café</mark>',
+                      self._ranked("cafe")[0][2])
+
+    def test_highlighting_escapes_the_title(self):
+        out = self._ranked("b", ["<b>bold</b>"])
+        self.assertNotIn("<b>", out[0][2])
+        self.assertIn("&lt;", out[0][2])
+
+    def test_search_box_ranks_folders_with_documents_and_marks_hits(self):
+        index = [
+            {"t": "Ideas for Fun", "p": "a.html", "k": "document", "u": 1},
+            {"t": "Fun Ideas", "p": "Imported from Quip/Fun Ideas/index.html",
+             "f": "Imported from Quip/Fun Ideas", "k": "folder", "c": "blue", "u": 1},
+            {"t": "Fun Recipe Ideas", "p": "b.html", "k": "document", "u": 1},
+            {"t": "Unrelated", "p": "Imported from Quip/Fun Ideas/c.html",
+             "f": "Imported from Quip/Fun Ideas", "k": "document", "u": 1},
+        ]
+        html = self._run(f"""
+window.QUIP_INDEX = {json.dumps(index)};
+function el(a) {{ return {{ attrs:a||{{}}, hidden:false, value:'', innerHTML:'',
+  style:{{}}, L:{{}}, querySelectorAll(){{ return []; }},
+  addEventListener(t,f){{ (this.L[t]=this.L[t]||[]).push(f); }},
+  getAttribute(n){{ return this.attrs[n]; }},
+  fire(t){{ (this.L[t]||[]).forEach(function(f){{ f(); }}); }} }}; }}
+var box=el(), out=el(), nav=el({{href:'index.html'}});
+var scope={{ querySelector:function(s){{ return {{'#quip-q':box,'#quip-results':out,
+  '.quip-nav a':nav}}[s] || null; }}, querySelectorAll:function(){{ return []; }} }};
+window.QuipUtils.initSiteSearch(scope);
+box.value='Fun Ideas'; box.fire('input');
+console.log(out.innerHTML);
+""")
+        self.assertIn("3 matches", html)
+        order = [html.index(t) for t in ('href="Imported%20from%20Quip/Fun%20Ideas/index.html"',
+                                         'href="b.html"', 'href="a.html"')]
+        self.assertEqual(order, sorted(order), "folder, then word match, then reordered")
+        self.assertNotIn("c.html", html, "a folder's name no longer matches its contents")
+        self.assertIn('<mark class="quip-hit">', html)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -186,16 +186,15 @@ def audit_discovery(cfg) -> list:
     """
     path = cfg.state_dir / "discovery.json"
     if not path.exists():
-        return [("discovery", "discovery.json is missing; run discover")]
+        return [("discovery", "discovery.json is missing")]
     try:
         summary = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return [("discovery", "discovery.json is unreadable; re-run discover")]
+        return [("discovery", "discovery.json is unreadable")]
     if not summary.get("discovery_complete"):
         return [("discovery",
                  "discovery did not record completion -- it was either "
-                 "interrupted or predates this check. Re-run `discover`; "
-                 "cached calls make it cheap.")]
+                 "interrupted or predates this check")]
     return []
 
 
@@ -237,7 +236,7 @@ def audit_folders(raw, cfg) -> list:
                 gaps.append(("folder", f"{child} is a child of {rec['id']} "
                                        "but was never fetched"))
     if not records:
-        gaps.append(("folder", "no folders discovered; run discover"))
+        gaps.append(("folder", "no folders discovered"))
     return gaps
 
 
@@ -344,15 +343,70 @@ def run(cfg, raw, progress=None) -> dict:
     }
 
 
-def report(result: dict) -> str:
+def is_complete(result: dict) -> bool:
+    """Refused threads do not count: asking again cannot change the answer."""
+    return (result["incomplete"] == 0 and not result["folder_gaps"]
+            and not result.get("discovery_gaps")
+            and not result["non_answers"]
+            and not result["index"]["missing_from_index_count"])
+
+
+TOKEN_PLACEHOLDER = '"MYQUIPTOKEN"'
+
+
+def next_steps(result: dict, export_id: str) -> list:
+    """Numbered, copyable commands for exactly the problems found.
+
+    Order matters: the index is repaired first because the rebuild reads it;
+    discovery before repair, so threads it finds are harvested in the same
+    pass; one rebuild at the end, after everything has been fetched.
+    """
+    import shlex
+
+    base = f"python3 -m quiport {{}} --export-id {shlex.quote(export_id)}"
+    token = f"--token {TOKEN_PLACEHOLDER}"
+    if is_complete(result):
+        return ["Nothing to fix. Check the finished pages next:", "",
+                f"    {base.format('verify')}"]
+
+    steps = []
+    gaps = result.get("discovery_gaps") or []
+    forgotten = [d.split(" ", 1)[0] for k, d in gaps if k == "forgotten"]
+    if result["index"]["missing_from_index_count"]:
+        steps.append(("Rebuild the index of downloaded responses (no token needed):",
+                      base.format("reindex")))
+    if result["folder_gaps"] or any(k != "forgotten" for k, _ in gaps):
+        steps.append(("Finish listing your folders and documents, and download any "
+                      "new ones:", f"{base.format('all')} --rediscover {token}"))
+    if forgotten:
+        ids = " ".join(forgotten[:50])
+        steps.append(("Put back documents that dropped out of the export"
+                      + (f" (first 50 of {len(forgotten)}; re-run audit for the rest)"
+                         if len(forgotten) > 50 else "") + ":",
+                      f"{base.format('refresh')} {ids} {token}"))
+    if result["incomplete"] or result["non_answers"]:
+        steps.append(("Download whatever is missing or failed:",
+                      f"{base.format('audit')} --repair {token}"))
+    steps.append(("Rebuild the pages with everything now downloaded:",
+                  f"{base.format('all')} {token}"))
+    steps.append(("Audit again. Repeat from step 1 if it still finds problems:",
+                  base.format("audit")))
+    steps.append(("Once the audit is clean, check the finished pages:",
+                  base.format("verify")))
+
+    lines = [f"Replace {TOKEN_PLACEHOLDER} with your Quip token. Run these in order:", ""]
+    for n, (why, command) in enumerate(steps, 1):
+        lines += [f"{n}. {why}", "", f"    {command}", ""]
+    return lines[:-1]
+
+
+def report(result: dict, export_id: str = "myaccount") -> str:
     """Markdown, so it can be committed beside the export as evidence."""
     lines = ["# Harvest audit", ""]
-    ok = (result["incomplete"] == 0 and not result["folder_gaps"]
-          and not result.get("discovery_gaps")
-          and not result["non_answers"]
-          and not result["index"]["missing_from_index_count"])
+    ok = is_complete(result)
     lines.append(f"**{'COMPLETE' if ok else 'INCOMPLETE'}** — "
-                 f"{result['complete']}/{result['threads']} threads have everything.")
+                 f"{result['complete']}/{result['threads']} threads have everything."
+                 + ("" if ok else " See **What to do next** at the end."))
     lines += ["", "| Check | Result |", "|---|---|"]
     lines.append(f"| threads complete | {result['complete']}/{result['threads']} |")
     lines.append(f"| threads with retryable gaps | {result['incomplete']} |")
@@ -403,14 +457,15 @@ def report(result: dict) -> str:
 
     if result["non_answers"]:
         lines += ["", "## Cached non-answers", "",
-                  "These requests never got an answer from the server. They are "
-                  "re-requested automatically on the next harvest.", ""]
+                  "These requests never got an answer from the server.", ""]
         for canon, status in result["non_answers"][:50]:
             lines.append(f"- `{canon}` → {status}")
 
     if result["index"]["missing_from_index_count"]:
         lines += ["", "## Index drift", "",
                   f"{result['index']['missing_from_index_count']} responses exist on "
-                  "disk but are absent from `index.jsonl`. Run `reindex`.", ""]
+                  "disk but are absent from `index.jsonl`.", ""]
 
+    # Last, so it is what is left on screen after a long list of gaps.
+    lines += ["", "## What to do next", ""] + next_steps(result, export_id)
     return "\n".join(lines) + "\n"

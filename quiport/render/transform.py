@@ -128,7 +128,7 @@ def render_image_placeholders(tree, report) -> int:
             replaced += 1
 
     if replaced:
-        # Recorded but deliberately absent from needs-attention: nothing was
+        # Recorded but deliberately absent from import notes: nothing was
         # lost, the well is empty in Quip too.
         report.add("image_placeholder", count=replaced)
     return replaced
@@ -140,11 +140,14 @@ def render_controls(tree, report, anchor_usec: int = 0) -> tuple[int, int]:
     """Handle Quip's generic `<control>` widget wrapper.
 
     `<control>` is not one thing. Measured across the test corpus: 6 of 126 are
-    **empty** -- those are inline file attachments, whose bytes the API never
-    exposes -- and the other 120 **carry text**: date mentions, person mentions,
-    template field placeholders, and "insert" prompts.
+    **empty** and the other 120 **carry text**: date mentions, person mentions,
+    template field placeholders, and "insert" prompts. An empty one is usually
+    an inline file attachment, whose bytes the API never exposes, but not
+    always: "Welcome to Quip" has a date ("Complete by <control/>") that the API
+    returns just as empty. Nothing in the markup tells the two apart, so the
+    marker says what is known -- something is missing -- not what it was.
 
-    So only an empty control may be replaced with a missing-file marker.
+    So only an empty control may be replaced with a missing file/date mention marker.
     Replacing the rest would destroy real content, which is exactly what an
     earlier version of this function did.
 
@@ -161,7 +164,7 @@ def render_controls(tree, report, anchor_usec: int = 0) -> tuple[int, int]:
                 "data-quip-control-id": control.get("id") or "",
             })
             placeholder.append(
-                H.Text("[Attached file &mdash; not available through the Quip API]"))
+                H.Text("[missing Quip file/date mention]"))
             if isinstance(parent, H.Element) and parent.replace(control, placeholder):
                 attachments += 1
             continue

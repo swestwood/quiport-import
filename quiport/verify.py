@@ -378,8 +378,8 @@ def check_offline(root: Path) -> Check:
 
 
 def check_reports(root: Path) -> Check:
-    expected = ["index.html", "recent.html", "needs-attention.html",
-                "spreadsheets.html", "slide-decks.html", "limitations.html",
+    expected = ["index.html", "recent.html", "import-notes.html",
+                "spreadsheets.html", "slide-decks.html",
                 "quip-export.css", "id-map.json"]
     missing = [name for name in expected if not (root / name).exists()]
     return Check("reports_present", not missing,

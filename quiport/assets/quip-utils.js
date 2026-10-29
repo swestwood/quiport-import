@@ -152,6 +152,181 @@
     apply();
   }
 
+  /* ---- title matching ---------------------------------------------------
+
+     Ranked like an editor's file picker. Each title gets the best tier it
+     qualifies for, lower is better:
+
+       0  the whole query appears in the title -- "fun ideas" in "Fun Ideas 2024"
+       1  every query word starts a word in the title -- "fun ideas" in
+          "Fun Recipe Ideas", in typed order ahead of out of order
+       2  fuzzy: the query's letters in order with gaps, Sublime-style, where
+          each query word's first letter must start a word -- "frcp" in
+          "Fun Recipe"
+
+     The word-start rule on tier 2 is what keeps it useful: without it any long
+     title is a subsequence match for any short query.
+
+     Both sides are lowercased, stripped of accents, and have - _ / : . read as
+     spaces, so "cafe q3 notes" finds "Café Q3-Notes". `map` carries each
+     normalised character back to its index in the original title, for the
+     highlight. */
+  var SEPARATOR = /[\s\-_\/:.]/;
+
+  function foldChar(c) {
+    if (SEPARATOR.test(c)) { return ' '; }
+    var d = c.normalize ? c.normalize('NFD').replace(/[̀-ͯ]/g, '') : c;
+    return d.toLowerCase();
+  }
+
+  function normalizeTitle(title) {
+    var s = String(title || ''), text = '', map = [], starts = [];
+    for (var i = 0; i < s.length; i++) {
+      var d = foldChar(s.charAt(i));
+      for (var k = 0; k < d.length; k++) {
+        var ch = d.charAt(k);
+        if (ch === ' ' && (text === '' || text.charAt(text.length - 1) === ' ')) { continue; }
+        var prev = text.charAt(text.length - 1);
+        var camel = i > 0 && k === 0 && /[a-z]/.test(s.charAt(i - 1)) && /[A-Z]/.test(s.charAt(i));
+        starts.push(ch !== ' ' && (text === '' || prev === ' ' || camel));
+        text += ch;
+        map.push(i);
+      }
+    }
+    return { text: text, map: map, starts: starts };
+  }
+
+  function normalizeQuery(query) {
+    var out = '';
+    var s = String(query || '');
+    for (var i = 0; i < s.length; i++) { out += foldChar(s.charAt(i)); }
+    return out.replace(/ +/g, ' ').trim();
+  }
+
+  /* The occurrence of `needle` at or after `from` that begins a word, or -1. */
+  function wordStartIndex(n, needle, from) {
+    var at = n.text.indexOf(needle, from);
+    while (at >= 0 && !n.starts[at]) { at = n.text.indexOf(needle, at + 1); }
+    return at;
+  }
+
+  function span(at, length) {
+    var out = [];
+    for (var i = at; i < at + length; i++) { out.push(i); }
+    return out;
+  }
+
+  function fuzzy(n, q) {
+    var chars = [], first = [];
+    for (var i = 0; i < q.length; i++) {
+      if (q.charAt(i) === ' ') { continue; }
+      first.push(chars.length === 0 || q.charAt(i - 1) === ' ');
+      chars.push(q.charAt(i));
+    }
+    if (chars.length < 2) { return null; }
+
+    /* best[i][j]: the best score with query char i matched at title char j.
+       A char scores 1, 8 more on a word start, 5 more when it directly follows
+       the previous match -- so "rcp" prefers "ReCiPe" letters that hug. */
+    var t = n.text, len = t.length, NONE = -Infinity;
+    var best = [], from = [];
+    for (var qi = 0; qi < chars.length; qi++) {
+      var row = new Array(len), back = new Array(len);
+      var prevRow = qi ? best[qi - 1] : null;
+      var runMax = NONE, runAt = -1;
+      for (var j = 0; j < len; j++) {
+        row[j] = NONE;
+        if (t.charAt(j) === chars[qi] && (!first[qi] || n.starts[j])) {
+          var gain = 1 + (n.starts[j] ? 8 : 0);
+          if (!prevRow) {
+            row[j] = gain;
+          } else {
+            if (runMax > NONE) { row[j] = runMax + gain; back[j] = runAt; }
+            if (!first[qi] && j > 0 && prevRow[j - 1] > NONE &&
+                prevRow[j - 1] + gain + 5 > row[j]) {
+              row[j] = prevRow[j - 1] + gain + 5;
+              back[j] = j - 1;
+            }
+          }
+        }
+        /* Fold this column into the running best for the next query char,
+           which may only land strictly to the right of it. */
+        if (prevRow && prevRow[j] > runMax) { runMax = prevRow[j]; runAt = j; }
+      }
+      best.push(row); from.push(back);
+    }
+
+    var last = best[chars.length - 1], end = -1, score = NONE;
+    for (var e = 0; e < len; e++) { if (last[e] > score) { score = last[e]; end = e; } }
+    if (end < 0) { return null; }
+    var positions = [];
+    for (var r = chars.length - 1; r >= 0; r--) { positions.unshift(end); end = from[r][end]; }
+    return { tier: 2, rank: -score, positions: positions };
+  }
+
+  /* A query against one title: {tier, rank, positions} or null. `positions`
+     index the ORIGINAL title, ready for highlightTitle(). */
+  function matchTitle(title, query, normalized) {
+    var q = normalizeQuery(query);
+    if (!q) { return null; }
+    var n = normalized || normalizeTitle(title);
+    var hit = null;
+
+    var at = wordStartIndex(n, q, 0);
+    if (at < 0) { at = n.text.indexOf(q); }
+    if (at >= 0) {
+      var rank = n.text === q ? 0 : at === 0 ? 1 : n.starts[at] ? 2 : 3;
+      hit = { tier: 0, rank: rank, positions: span(at, q.length) };
+    }
+
+    var words = q.split(' ');
+    if (!hit && words.length > 1) {
+      var used = [], starts = [], ok = true;
+      for (var w = 0; w < words.length && ok; w++) {
+        var from = 0, found = -1;
+        while ((found = wordStartIndex(n, words[w], from)) >= 0 && used[found]) {
+          from = found + 1;
+        }
+        if (found < 0) { ok = false; break; }
+        starts.push(found);
+        for (var c = found; c < found + words[w].length; c++) { used[c] = true; }
+      }
+      if (ok) {
+        var inOrder = starts.every(function (s, i) { return !i || s > starts[i - 1]; });
+        var positions = [];
+        for (var p = 0; p < used.length; p++) { if (used[p]) { positions.push(p); } }
+        hit = { tier: 1, rank: inOrder ? 0 : 1, positions: positions };
+      }
+    }
+
+    if (!hit) { hit = fuzzy(n, q); }
+    if (!hit) { return null; }
+
+    var original = [];
+    for (var h = 0; h < hit.positions.length; h++) {
+      if (n.text.charAt(hit.positions[h]) !== ' ') { original.push(n.map[hit.positions[h]]); }
+    }
+    hit.positions = original;
+    return hit;
+  }
+
+  /* Escaped title with each run of matched characters wrapped in <mark>. */
+  function highlightTitle(title, positions) {
+    var s = String(title == null ? '' : title);
+    if (!positions || !positions.length) { return escapeHtml(s); }
+    var on = {};
+    positions.forEach(function (p) { on[p] = true; });
+    var html = '', i = 0;
+    while (i < s.length) {
+      var j = i;
+      while (j < s.length && !!on[j] === !!on[i]) { j++; }
+      var piece = escapeHtml(s.slice(i, j));
+      html += on[i] ? '<mark class="quip-hit">' + piece + '</mark>' : piece;
+      i = j;
+    }
+    return html;
+  }
+
   /* Site-wide search, on every page.
 
      The index is `window.QUIP_INDEX`, written once to quip-search-index.js and
@@ -190,9 +365,7 @@
         (f.created && f.created.value) || (f.modified && f.modified.value);
     }
 
-    function matches(e, term, createdAfter, modifiedAfter, minMembers) {
-      if (term && !((e.t || '').toLowerCase().indexOf(term) >= 0 ||
-                    (e.f || '').toLowerCase().indexOf(term) >= 0)) { return false; }
+    function passesFilters(e, createdAfter, modifiedAfter, minMembers) {
       if (f.type && f.type.value && e.k !== f.type.value) { return false; }
       if (f.share && f.share.value && (e.s || '') !== f.share.value) { return false; }
       if (minMembers !== null && !(Number(e.m || 0) >= minMembers)) { return false; }
@@ -226,16 +399,31 @@
         if (tree) { tree.style.display = ''; }
         return;
       }
-      var term = box.value.trim().toLowerCase();
+      var term = box.value.trim();
       var createdAfter = stamp(f.created), modifiedAfter = stamp(f.modified);
       var minMembers = (f.members && f.members.value !== '')
         ? Number(f.members.value) : null;
 
+      /* Titles only: folders are entries of their own, so a folder named
+         "Fun Ideas" is a result in its own right rather than lending its name
+         to everything inside it. */
       var hits = [];
       for (var i = 0; i < index.length; i++) {
-        if (matches(index[i], term, createdAfter, modifiedAfter, minMembers)) {
-          hits.push(index[i]);
-        }
+        var e = index[i];
+        if (!passesFilters(e, createdAfter, modifiedAfter, minMembers)) { continue; }
+        if (!term) { hits.push({ e: e, m: null }); continue; }
+        if (!e._n) { e._n = normalizeTitle(e.t); }     // once per entry, not per keystroke
+        var m = matchTitle(e.t, term, e._n);
+        if (m) { hits.push({ e: e, m: m }); }
+      }
+      /* The index arrives sorted by title, and Array#sort is stable, so equal
+         ranks keep that order. Sorting before the cap means the 300 shown are
+         the best 300. */
+      if (term) {
+        hits.sort(function (a, b) {
+          return (a.m.tier - b.m.tier) || (a.m.rank - b.m.rank) ||
+                 ((a.e.t || '').length - (b.e.t || '').length);
+        });
       }
       if (tree) { tree.style.display = 'none'; }
       out.hidden = false;
@@ -246,7 +434,8 @@
         (hits.length > shown.length ? ', showing the first ' + shown.length : '') +
         '</p><ul class="quip-listing">';
       for (var j = 0; j < shown.length; j++) {
-        html += '<li>' + entryHtml(shown[j], prefix) + '</li>';
+        html += '<li>' + entryHtml(shown[j].e, prefix,
+                                   shown[j].m && shown[j].m.positions) + '</li>';
       }
       out.innerHTML = html + '</ul>';
       applyRelativeTimes(out);
@@ -288,18 +477,21 @@
 
   /* One row: icon, title, relative date. Used by the search results so they
      match the static tree exactly. */
-  function entryHtml(entry, prefix) {
+  function entryHtml(entry, prefix, positions) {
     /* Mirrors entry_row() in reports.py, folder class included, so a search
        result and the same row in the tree look identical.
 
        `prefix` climbs back to the export root: index paths are stored relative
        to it, so a result shown on a page three folders deep needs "../../../"
-       in front or the link resolves against the wrong directory. */
+       in front or the link resolves against the wrong directory.
+
+       `positions`, from a search, marks the matched characters of the title;
+       without it the markup is exactly entry_row()'s. */
     var cls = 'quip-entry' +
       (String(entry.k || '').toLowerCase() === 'folder' ? ' quip-folder' : '');
     return '<a class="' + cls + '" href="' + (prefix || '') + encodeURI(entry.p) + '">' +
       iconHtml(entry.k, entry.c) +
-      '<span class="quip-entry-title">' + escapeHtml(entry.t) + '</span>' +
+      '<span class="quip-entry-title">' + highlightTitle(entry.t, positions) + '</span>' +
       (entry.u ? '<span class="quip-when" data-quip-updated="' + entry.u + '"></span>' : '') +
       (entry.f ? '<span class="quip-entry-folder">' + escapeHtml(entry.f) + '</span>' : '') +
       '</a>';
@@ -506,6 +698,8 @@
     escapeHtml: escapeHtml,
     applyRelativeTimes: applyRelativeTimes,
     entryHtml: entryHtml,
+    matchTitle: matchTitle,
+    highlightTitle: highlightTitle,
     initTree: initTree,
     codeText: codeText,
     asLines: asLines,

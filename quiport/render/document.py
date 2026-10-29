@@ -9,9 +9,9 @@ from ..model import Thread, format_date
 from ..naming import path_to_root, relative_path
 from . import comments as C
 from . import transform as T
-from .templates import (HIGHLIGHT_NAME, SEARCH_INDEX_NAME, STYLESHEET_NAME,
-                        UTILS_NAME, site_chrome,
-                        breadcrumb, footer, icon_sprite, page)
+from .templates import (HIGHLIGHT_NAME, ICON_BY_KIND, SEARCH_INDEX_NAME, STYLESHEET_NAME,
+                        UTILS_NAME, breadcrumb, chrome_scripts, footer, icon_sprite,
+                        page, site_chrome)
 
 log = logging.getLogger(__name__)
 
@@ -95,13 +95,14 @@ def render_document(thread: Thread, ctx) -> tuple[str, RenderReport]:
 
     # Only the symbols this page actually references: an unused sprite is dead
     # weight, and a missing one renders as blank space. `verify` checks that
-    # every <use> resolves, which is what keeps these two lists honest.
-    wanted = []
+    # every <use> resolves, which is what keeps these two lists honest. The
+    # list icons are always wanted: the search bar draws its results with them.
+    wanted = list(ICON_BY_KIND)
     if comment_set.anchored:
         wanted.append("comment")
     if "prettyprint" in (thread.html or ""):
         wanted.append("code")           # the language switcher's trigger
-    sprite = icon_sprite(*wanted) if wanted else ""
+    sprite = icon_sprite(*wanted)
 
     truncation = ""
     if not thread.html_complete:
@@ -113,11 +114,12 @@ def render_document(thread: Thread, ctx) -> tuple[str, RenderReport]:
 
     # Chrome first, and outside `.quip-body` -- `verify`'s content check reads
     # that element and would compare the nav's words against the document's.
+    comment_files = C.recording_resolver(blob_resolver, report)
     parts = [sprite, site_chrome(page_path), crumbs, meta, truncation,
              _xlsx_banner(thread, ctx, page_path, report),
              f'<article class="quip-body" id="quip-document">{body_html}</article>',
-             C.render_comments(comment_set, blob_resolver, page_path, ctx.user_name),
-             C.render_chat(comment_set, blob_resolver, page_path,
+             C.render_comments(comment_set, comment_files, page_path, ctx.user_name),
+             C.render_chat(comment_set, comment_files, page_path,
                            name_resolver=ctx.user_name)]
 
     report.add("stats", tables=tables, checkboxes=checked,
@@ -279,7 +281,7 @@ def render_stub(thread: Thread, stub_path: str, canonical_path: str, ctx) -> str
     """
     target = relative_path(stub_path, canonical_path)
     css = relative_path(stub_path, STYLESHEET_NAME)
-    body = f"""<div class="quip-stub">
+    body = icon_sprite(*ICON_BY_KIND) + site_chrome(stub_path) + f"""<div class="quip-stub">
 <h1>{H.escape_text(thread.display_title)}</h1>
 <p>This document is filed in more than one Quip folder. The full copy lives at:</p>
 <p><a href="{H.escape_attr(target)}">{H.escape_text(canonical_path)}</a></p>
@@ -287,4 +289,5 @@ def render_stub(thread: Thread, stub_path: str, canonical_path: str, ctx) -> str
 {f"&middot; secret path {H.escape_text(thread.secret_path)}" if thread.secret_path else ""}</p>
 </div>"""
     return page(f"{thread.display_title} (shortcut)", body, css,
-                body_class="quip-stub-page", footer=footer(ctx.exported_at(thread.id)))
+                body_class="quip-stub-page", extra_head=chrome_scripts(stub_path),
+                footer=footer(ctx.exported_at(thread.id)))

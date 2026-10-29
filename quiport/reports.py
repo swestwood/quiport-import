@@ -16,9 +16,9 @@ from pathlib import Path
 from . import htmlutil as H
 from .model import format_date
 from .naming import relative_path
-from .render.templates import (ICON_BY_KIND, SEARCH_INDEX_NAME, STYLESHEET_NAME,
-                               UTILS_NAME, chrome_scripts, footer, site_chrome,
-                               icon_sprite, icon_use, page)
+from .render.templates import (ICON_BY_KIND, IMPORT_NOTES, SEARCH_INDEX_NAME,
+                               STYLESHEET_NAME, UTILS_NAME, chrome_scripts, footer,
+                               site_chrome, icon_sprite, icon_use, page)
 
 log = logging.getLogger(__name__)
 
@@ -321,9 +321,13 @@ def slide_decks(cfg, threads) -> str:
                 body_class="quip-report-page", extra_head=chrome_scripts(page_path), footer=footer())
 
 
-def needs_attention(cfg, threads, reports, discovery: dict) -> str:
-    """Everything lossy, in one place."""
-    page_path = "needs-attention.html"
+def import_notes(cfg, threads, reports, discovery: dict) -> str:
+    """Everything the archive could not carry across, in one place.
+
+    The per-document problems come first because they are the ones a reader can
+    act on; the format-wide notes (formulas, slides, live apps) follow.
+    """
+    page_path = IMPORT_NOTES
     sections = []
 
     rows = []
@@ -336,14 +340,18 @@ def needs_attention(cfg, threads, reports, discovery: dict) -> str:
         for blob_kind, n in sorted(missing.items()):
             problems.append(f'<span class="quip-flag">{n} missing {blob_kind}'
                             f'{"s" if n != 1 else ""}</span>')
+        n_comment_files = rep.count("missing_comment_file")
+        if n_comment_files:
+            problems.append(f'<span class="quip-flag">{n_comment_files} missing file'
+                            f'{"s" if n_comment_files != 1 else ""} in comments</span>')
         n_live = rep.count("live_app_placeholder")
         if n_live:
             problems.append(f'<span class="quip-flag">{n_live} live app not rendered</span>')
         n_attach = sum(e.get("count", 0) for e in rep.entries
                        if e["kind"] == "unexported_attachment")
         if n_attach:
-            problems.append(f'<span class="quip-flag">{n_attach} attached file(s) '
-                            f'not available</span>')
+            problems.append(f'<span class="quip-flag">{n_attach} missing Quip '
+                            f'file/date mention{"s" if n_attach != 1 else ""}</span>')
         # The most serious kind of loss: a document that reads as complete and
         # is a prefix. Listed first because it is the one worth acting on.
         if rep.has("incomplete_html"):
@@ -354,9 +362,9 @@ def needs_attention(cfg, threads, reports, discovery: dict) -> str:
             problems.append('<span class="quip-flag">no content returned</span>')
         if rep.has("parse_warning"):
             problems.append('<span class="quip-flag">parse warning</span>')
-        # Unanchored comments are NOT content loss -- see the section at the
-        # bottom of this page. They are listed separately so this table stays a
-        # list of things that actually went wrong.
+        # Unanchored comments are not listed: every comment is still on its
+        # document, under "Unanchored comments". Only its position is unknown,
+        # because the passage it was written about was later edited in Quip.
         if t.has_charts:
             problems.append('<span class="quip-flag">charts lost</span>')
         if not problems:
@@ -371,6 +379,35 @@ def needs_attention(cfg, threads, reports, discovery: dict) -> str:
     sections.append(
         _table(["Document", "Folder", "Issues", "Source"], rows) if rows
         else "<p>None. Every document rendered without loss.</p>")
+    sections.append("<h3>About missing images</h3>")
+    sections.append(
+        "<p>Blob permissions in Quip are independent of document permissions, so a "
+        "document you can read may contain images you cannot. Those appear inline as "
+        "<span class=\"quip-missing-image\">[missing: …]</span> and are reported under "
+        "&ldquo;content loss&rdquo;. The same goes for files attached to comments and "
+        "chat messages, which appear as "
+        "<span class=\"quip-missing-image\">[missing file: …]</span>.</p>")
+
+    attach_total = sum(e.get("count", 0) for _t, rep in reports
+                       for e in rep.entries if e["kind"] == "unexported_attachment")
+    attach_docs = sum(1 for _t, rep in reports if rep.has("unexported_attachment"))
+    sections.append("<h3>About missing Quip file/date mentions</h3>")
+    if attach_total:
+        sections.append(
+            f"<p><strong>{attach_total} file/date mentions across {attach_docs} "
+            "documents came back empty from Quip's API.</strong> Most are attached "
+            "files: Quip's API "
+            "represents one as an empty <code>&lt;control&gt;</code> element carrying no "
+            "filename, no identifier and no link, and the file is absent from the V1 "
+            "HTML, the V2 HTML, the DOCX export and the messages API. But the API "
+            "returns date mentions the same way, and nothing in its response says "
+            "which one a given empty mention was. Each is marked in place as "
+            "<span class=\"quip-missing-attachment\">[missing Quip file/date "
+            "mention]</span>. Opening "
+            "the original in Quip shows what it was; a file has to be downloaded from "
+            "there by hand.</p>")
+    else:
+        sections.append("<p>No missing Quip file/date mentions were detected.</p>")
 
     restricted = discovery.get("restricted_folders") or []
     sections.append("<h2>Inaccessible folders</h2>")
@@ -382,43 +419,14 @@ def needs_attention(cfg, threads, reports, discovery: dict) -> str:
     else:
         sections.append("<p>None.</p>")
 
-    sections.append("<h2>About missing images</h2>")
-    sections.append(
-        "<p>Blob permissions in Quip are independent of document permissions, so a "
-        "document you can read may contain images you cannot. Those appear inline as "
-        "<span class=\"quip-missing-image\">[missing: …]</span> and are counted above. "
-        "Re-running the export with a token that has broader access will recover them.</p>")
-
-    attach_total = sum(e.get("count", 0) for _t, rep in reports
-                       for e in rep.entries if e["kind"] == "unexported_attachment")
-    attach_docs = sum(1 for _t, rep in reports if rep.has("unexported_attachment"))
-    sections.append("<h2>About attached files</h2>")
-    if attach_total:
-        sections.append(
-            f"<p><strong>{attach_total} attached files across {attach_docs} documents "
-            "could not be exported.</strong> Quip's API represents an attached file as an "
-            "empty <code>&lt;control&gt;</code> element carrying no filename, no "
-            "identifier and no link. The file is absent from the V1 HTML, the V2 HTML, "
-            "the DOCX export and the messages API, and <code>/1/blob/</code> requires a "
-            "blob id that only the web application knows &mdash; Quip's own documentation "
-            "says to find blob ids by inspecting the document in a browser. Each one is "
-            "marked in place as "
-            "<span class=\"quip-missing-attachment\">[Attached file &mdash; not available "
-            "through the Quip API]</span>. Recovering them would require downloading each "
-            "file manually from Quip, or a browser-driven export.</p>")
-    else:
-        sections.append("<p>No attached files were found.</p>")
-
     sections.append(_formulas_note(threads))
     sections.append(_slides_note(threads))
     sections.append(_live_apps_section(page_path, reports))
-    sections.append(_unanchored_comments_section(page_path, reports))
 
-    body = (icon_sprite() + site_chrome(page_path, "needs-attention.html")
-            + "<h1>Needs attention</h1>"
-            "<p>Everything this export could not carry over faithfully.</p>"
+    body = (icon_sprite() + site_chrome(page_path, IMPORT_NOTES)
+            + "<h1>Import notes</h1>"
             + "\n".join(sections))
-    return page("Needs attention", body, STYLESHEET_NAME,
+    return page("Import notes", body, STYLESHEET_NAME,
                 body_class="quip-report-page", extra_head=chrome_scripts(page_path), footer=footer())
 
 
@@ -471,12 +479,11 @@ def _slides_note(threads) -> str:
         "so on a page it reads as a long sequence of tables rather than as slides. "
         "Nothing is missing; it is the arrangement that does not survive. A dedicated "
         "renderer, or Quip's asynchronous PDF export, would read far better.</p>"
-        '<p><a href="slide-decks.html">Slide decks</a> lists them, and the <a href="limitations.html">'
-        'limitations</a> page explains why.</p>')
+        '<p><a href="slide-decks.html">Slide decks</a> lists them.</p>')
 
 
 def _live_apps_section(page_path: str, reports) -> str:
-    """Every document containing a live app — the list `limitations.html` points at.
+    """Every document containing a live app.
 
     A live app is a dynamic widget frozen into static HTML, so all of them are
     worth a human glance even when nothing was lost. Ordered by how much
@@ -505,7 +512,7 @@ def _live_apps_section(page_path: str, reports) -> str:
             _quip_link(t.link),
         ]))
     if not rows:
-        return ("<h2>Documents with live apps</h2>"
+        return ("<h2>Live apps are static snapshots</h2>"
                 "<p>None. This account contains no live apps.</p>")
 
     rows.sort(key=lambda r: (-r[0], -r[1], r[2]))
@@ -528,110 +535,16 @@ def _live_apps_section(page_path: str, reports) -> str:
                  "checking against the original.</p>")
     if not empty_docs and not recovered_docs:
         lead += "<p>Every one of them came across with its content intact.</p>"
+    lead += ("<p>Payload decoding covers Kanban, Calendar and Project Tracker; other "
+             "types show only Quip's rendering.</p>")
 
-    return ("<h2>Documents with live apps</h2>" + lead
+    return ("<h2>Live apps are static snapshots</h2>"
+            "<p>Quip's export includes some live app data, but you may want to "
+            "spot-check important documents.</p>"
+            + lead
+            + "<h3>Documents with live apps</h3>"
             + _table(["Document", "Folder", "Apps", "Types", "Status", "Source"],
                      [r[3] for r in rows]))
-
-
-def _unanchored_comments_section(page_path: str, reports) -> str:
-    """Comment threads whose anchor no longer resolves.
-
-    Deliberately its own section at the bottom, and deliberately not counted as
-    content loss: **every comment is still in the export**, under "Unanchored
-    comments" on its own document. Only the position within the text is
-    unknown, because the commented-on passage was edited or deleted in Quip
-    afterwards -- ordinary use of a living document, not an export failure.
-
-    It stays on this page because a reader who finds a comment with no obvious
-    referent deserves to know why.
-    """
-    rows, total = [], 0
-    for t, rep in reports:
-        entry = next((e for e in rep.entries if e["kind"] == "unanchored_comments"), None)
-        if entry is None:
-            continue
-        total += entry["count"]
-        rows.append([
-            _title_cell(page_path, t),
-            _folder_cell(page_path, t),
-            str(entry["count"]),
-            str(entry.get("anchored", 0)),
-            _quip_link(t.link),
-        ])
-    if not rows:
-        return ("<h2>Documents with unanchored comment threads</h2>"
-                "<p>None. Every comment resolved to the text it was written about.</p>")
-
-    return (
-        "<h2>Documents with unanchored comment threads</h2>"
-        f"<p><strong>{total} comment threads across {len(rows)} documents</strong> could "
-        "not be tied to a passage of text. <strong>No comment was lost</strong> — every "
-        "one is reproduced in full on its own document, under the heading "
-        "&ldquo;Unanchored comments&rdquo;. What is missing is only the position: Quip "
-        "anchors a comment to a specific span, and when that span is later edited or "
-        "deleted the anchor stops resolving. That is normal use of a living document, "
-        "not a fault in the export — in this account most anchors are years old. "
-        "Listed here so a reader who meets a comment with no obvious referent knows "
-        "why.</p>"
-        + _table(["Document", "Folder", "Unanchored", "Anchored", "Source"], rows))
-
-
-def limitations(cfg, threads, reports) -> str:
-    page_path = "limitations.html"
-    decks = [t for t in threads.values() if t.is_slides]
-    sheets = [t for t in threads.values() if t.spreadsheet_summary]
-    placeholders = [(t, rep.count("live_app_placeholder"))
-                    for t, rep in reports if rep.has("live_app_placeholder")]
-    extra_count = sum(rep.count("live_app_payload_extra") for _t, rep in reports)
-    live_apps = [e for _t, rep in reports for e in rep.entries
-                 if e["kind"] == "stats" for _ in range(e.get("live_apps", 0))]
-    live_app_docs = sum(1 for _t, rep in reports if rep.has("live_apps"))
-
-    xlsx_done = sum(1 for t in threads.values() if t.xlsx_path)
-    items = [
-        ("Spreadsheet formulas are not recoverable",
-         f"{xlsx_done} of {len(sheets)} spreadsheet-bearing threads now have a real "
-         "workbook exported beside them, keeping cell types, styles, column widths and "
-         "separate sheets. <strong>Formulas are still not recoverable:</strong> Quip's "
-         "own <code>/1/threads/{id}/export/xlsx</code> writes no formula elements at "
-         "all, verified across every thread whose metadata reports "
-         "<code>has_formulas</code>. Both the HTML and the workbook carry computed "
-         "values only. Recovering the formulas themselves would need a route the "
-         "Automation API does not offer.",
-         "spreadsheets.html"),
-        ("Slide decks are not laid out as slides",
-         f"{len(decks)} decks currently render as their raw Quip HTML. A dedicated "
-         "renderer, or the async PDF export, would read far better.",
-         "slide-decks.html"),
-        ("Live apps are static snapshots",
-         f"{len(live_apps)} live apps across {live_app_docs} documents are shown using "
-         "Quip's own rendering, which is better than anything decoded from the payload. "
-         + (f"<strong>{sum(n for _, n in placeholders)} across {len(placeholders)} "
-            "documents show nothing at all</strong> and need a human look. "
-            if placeholders else "Every one of them carries content. ")
-         + f"{extra_count} had content the rendering dropped, recovered from the "
-         "payload and shown above it. Payload decoding covers Kanban, Calendar and "
-         "Project Tracker; other types could be added.",
-         "needs-attention.html"),
-    ]
-
-    body = [icon_sprite(), site_chrome(page_path, "limitations.html"), "<h1>Limitations</h1>",
-            "<p>What the archive cannot carry across from Quip, and why.</p>"]
-    for title, detail, link in items:
-        body.append(f'<div class="quip-limitation-item"><h2>{H.escape_text(title)}</h2>'
-                    f"<p>{detail}</p>"
-                    f'<p><a href="{H.escape_attr(link)}">Affected documents</a></p></div>')
-
-    if placeholders:
-        rows = [[_title_cell(page_path, t),
-                 H.escape_text(_folder_of(t)), str(n)] for t, n in
-                sorted(placeholders, key=lambda p: -p[1])]
-        body.append("<h2>Live apps by document</h2>")
-        body.append(_table(["Document", "Folder", "Placeholders"], rows))
-
-    return page("Limitations", "\n".join(body), STYLESHEET_NAME,
-                body_class="quip-report-page", extra_head=chrome_scripts(page_path), footer=footer())
 
 
 def _share_bucket(thread) -> str:
@@ -829,12 +742,20 @@ def write_all(cfg, result, discovery: dict) -> dict:
         "recent.html": recent(cfg, threads),
         "spreadsheets.html": spreadsheets(cfg, threads),
         "slide-decks.html": slide_decks(cfg, threads),
-        "needs-attention.html": needs_attention(cfg, threads, reports, discovery),
-        "limitations.html": limitations(cfg, threads, reports),
+        IMPORT_NOTES: import_notes(cfg, threads, reports, discovery),
         "index.html": index(cfg, threads, folders, discovery),
     }
     for name, html in pages.items():
         (cfg.root / name).write_text(html, encoding="utf-8")
+    # Both were merged into import-notes.html. In an older export, document
+    # pages not yet re-rendered still link to them from their nav bar, so each
+    # becomes a forward rather than a dead link or a stale copy.
+    forward = (f'<!doctype html><meta charset="utf-8"><title>Import notes</title>'
+               f'<meta http-equiv="refresh" content="0; url={IMPORT_NOTES}">'
+               f'<p>Moved to <a href="{IMPORT_NOTES}">Import notes</a>.</p>\n')
+    for old in ("needs-attention.html", "limitations.html"):
+        if (cfg.root / old).exists():
+            (cfg.root / old).write_text(forward, encoding="utf-8")
 
     # Shared by every page's search box. One copy, not one per document.
     (cfg.root / SEARCH_INDEX_NAME).write_text(

@@ -11,7 +11,8 @@ from ..model import Thread, format_date
 from ..naming import relative_path
 from . import comments as C
 from .document import RenderReport, _breadcrumbs, render_metadata
-from .templates import STYLESHEET_NAME, footer, page
+from .templates import (ICON_BY_KIND, STYLESHEET_NAME, chrome_scripts, footer,
+                        icon_sprite, page, site_chrome)
 
 
 def render_chat(thread: Thread, ctx) -> tuple[str, RenderReport]:
@@ -21,7 +22,8 @@ def render_chat(thread: Thread, ctx) -> tuple[str, RenderReport]:
 
     empty_tree = H.parse("")
     comment_set = C.build(thread.messages, empty_tree, report)
-    blob_resolver = ctx.blobs.resolver_for(thread)
+    # Every file here is a message attachment, so every miss is recorded.
+    blob_resolver = C.recording_resolver(ctx.blobs.resolver_for(thread), report)
 
     # Every message in a chat is the conversation itself, so anchoring is
     # meaningless here: render them as one transcript in time order.
@@ -34,6 +36,8 @@ def render_chat(thread: Thread, ctx) -> tuple[str, RenderReport]:
     extra = C.render_comments(comment_set, blob_resolver, page_path, ctx.user_name)
 
     body = "\n".join(p for p in [
+        icon_sprite(*ICON_BY_KIND),        # the search bar draws results with these
+        site_chrome(page_path),
         _breadcrumbs(thread, ctx, page_path),
         f"<h1>{H.escape_text(thread.display_title)}</h1>",
         render_metadata(thread, ctx, page_path),
@@ -46,5 +50,5 @@ def render_chat(thread: Thread, ctx) -> tuple[str, RenderReport]:
                checkboxes=0, live_apps=0)
 
     return page(thread.display_title, body, css,
-                body_class="quip-chat-page",
+                body_class="quip-chat-page", extra_head=chrome_scripts(page_path),
                 footer=footer(ctx.exported_at(thread.id))), report
