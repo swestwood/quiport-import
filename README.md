@@ -16,6 +16,7 @@ Resulting import includes the original folder structure, a search bar, filters, 
     - `python3 -m quiport all --export-id myaccount --token "MYQUIPTOKEN"`
     - "myaccount" can be replaced by whatever you want to call the export
     - Replace "MYQUIPTOKEN" with your token. Make sure it is in quote marks.
+        - (You can also create a file called `.env` in the `quiport-import/` directory and put this line in it: `QUIP_TOKEN=your-token-here` instead. If you do this, don't pass the `--token` flag at all.)
     - Then wait! It will give you updates along the way. It may take awhile depending on how big your account is. You can probably ignore everything it says.
     - It can be stopped at any point, just do Ctrl-C. To resume where you left off, just run the command again.
 - When it finishes:
