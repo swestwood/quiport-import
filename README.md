@@ -13,10 +13,10 @@ Resulting import includes the original folder structure, a search bar, filters, 
 - Get your Quip API token
     - Visit [https://quip.com/dev/token](https://quip.com/dev/token) in your browser while logged in. Copy the long bit of text it gives you.
 - Run this command:
-    - `python3 -m quiport all --export-id myaccount --token "MYQUIPTOKEN"`
+    - `python3 -m quiport all --export-id myaccount --token 'MYQUIPTOKEN'`
     - "myaccount" can be replaced by whatever you want to call the export
-    - Replace "MYQUIPTOKEN" with your token. Make sure it is in quote marks.
-        - (You can also create a file called `.env` in the `quiport-import/` directory and put this line in it: `QUIP_TOKEN=your-token-here` instead. If you do this, don't pass the `--token` flag at all.)
+    - Replace 'MYQUIPTOKEN' with your token. Make sure it is in quote marks.
+        - (You can also create a file called `.env` in the `quiport-import/` directory and put this line in it: `QUIP_TOKEN='your-token-here'` instead. If you do this, don't pass the `--token` flag at all.)
     - Then wait! It will give you updates along the way. It may take awhile depending on how big your account is. You can probably ignore everything it says.
     - It can be stopped at any point, just do Ctrl-C. To resume where you left off, just run the command again.
 - When it finishes:
@@ -70,7 +70,7 @@ It will give you links to open the import and the original side by side. Most of
 
 If you keep using your Quip account after exporting it, you can pick up the changes by running:
 
-`python3 -m quiport check-updates --export-id myaccount --token "MYQUIPTOKEN"`
+`python3 -m quiport check-updates --export-id myaccount --token 'MYQUIPTOKEN'`
 
 Sample output:
 ```
@@ -88,7 +88,7 @@ Refresh these 6 document(s)? [y/N]
 ```
 
 Or, you can refetch a specific document with:
-- `python3 -m quiport refresh --export-id myaccount "https://acme.quip.com/A3anAlAOXYaD/Some-document" --token "MYQUIPTOKEN"`
+- `python3 -m quiport refresh --export-id myaccount "https://acme.quip.com/A3anAlAOXYaD/Some-document" --token 'MYQUIPTOKEN'`
 
 ## Caveats
 
