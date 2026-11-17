@@ -61,7 +61,7 @@ def _normalize(text: str) -> str:
 # come out before comparing against the raw API text.
 GENERATED_CLASSES = ("quip-comment-ref", "quip-liveapp-label",
                      "quip-missing-attachment", "quip-missing-image",
-                     "quip-image-placeholder")
+                     "quip-image-placeholder", "quip-sheet-name")
 
 
 def _page_text(html: str, selector_class: str | None = None,

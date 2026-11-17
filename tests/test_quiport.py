@@ -142,6 +142,23 @@ class TestTransforms(unittest.TestCase):
     def setUp(self):
         self.report = RenderReport("t", "T")
 
+    def test_default_sheet_names_are_hidden(self):
+        tree = H.parse("<div data-section-style='13'><table title='Sheet 123'>"
+                       "<tr><td>Data</td></tr></table></div>")
+        T.tag_tables(tree)
+        out = H.serialize(tree)
+        self.assertNotIn('class="quip-sheet-name"', out)
+        self.assertIn('title="Sheet 123"', out)
+        self.assertIn("Data", out)
+
+    def test_custom_sheet_names_are_shown(self):
+        for title in ("Sheet 1 notes", "Sheet1", "Budget &amp; forecast"):
+            with self.subTest(title=title):
+                tree = H.parse(f"<div data-section-style='13'><table title='{title}'></table></div>")
+                T.tag_tables(tree)
+                out = H.serialize(tree)
+                self.assertIn(f'<h2 class="quip-sheet-name">{title}</h2>', out)
+
     def test_checklist_becomes_real_checkboxes(self):
         src = ("<div data-section-style='7'><ul>"
                "<li class='checked'>done</li><li>todo</li></ul></div>")

@@ -227,6 +227,7 @@ div[data-section-style="6"] ul ul ul ul ul ul { list-style-type: lower-roman; }
    a wide sheet needs without the table having to stop being a table. */
 .quip-body div[data-section-style="8"],
 .quip-body div[data-section-style="13"] { overflow-x: auto; }
+.quip-body .quip-sheet-name { margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
 /* A spreadsheet may break out of the 900px page to within 24px of either
    window edge. Its box bleeds into the left margin and an equal left padding
    puts the sheet back on the text's edge; scrolling it sideways scrolls that
